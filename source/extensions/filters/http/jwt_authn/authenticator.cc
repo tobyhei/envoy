@@ -143,6 +143,25 @@ void AuthenticatorImpl::startVerify() {
     return;
   }
 
+  //  ensure was not issued in future, allowing 60 seconds leniency for clock drift
+  if (jwt_->iat_ - 60 > unix_timestamp) {
+    doneWithStatus(Status::JwtNotYetValid);
+    return;
+  }
+
+  // ensure duration is <= 1 hour
+  if (jwt_->exp_ - jwt_->iat_ > 3601) {
+    doneWithStatus(Status::JwtExpired);
+    return;
+  }
+
+  std::regex kid_regex("^(\\w+[-.\\w]*)\\.[0-9]{8}T[0-9]{6}Z$");
+  if (jwt_->kid_.empty() || jwt_->iss_.empty() || jwt_->kid_.length() != jwt_->iss_.length()+17 ||
+   !std::regex_match(jwt_->kid_, kid_regex)) {
+    doneWithStatus(Status::JwtHeaderBadKid);
+    return;
+  }
+
   // Check the issuer is configured or not.
   jwks_data_ = provider_ ? jwks_cache_.findByProvider(provider_.value())
                          : jwks_cache_.findByIssuer(jwt_->iss_);
